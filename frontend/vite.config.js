@@ -13,5 +13,17 @@ export default defineConfig({
             '/api': { target: BACKEND_URL, changeOrigin: true },
             '/uploads': { target: BACKEND_URL, changeOrigin: true }
         }
+    },
+    build: {
+        outDir: 'dist',
+        chunkSizeWarningLimit: 600,
+        rollupOptions: {
+            output: {
+                manualChunks: {
+                    'react-vendor': ['react', 'react-dom', 'react-router-dom'],
+                    'ui-vendor': ['tailwindcss', 'react-hot-toast', 'framer-motion', 'react-icons']
+                }
+            }
+        }
     }
 })

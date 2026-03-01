@@ -67,6 +67,7 @@ router.post('/', protect, adminOnly, upload.array('images', 8), async (req, res)
             images,
             isFeatured: isFeatured === 'true',
             isNewArrival: isNewArrival !== 'false',
+            isActive: true,
             tags: tags ? JSON.parse(tags) : []
         });
         res.status(201).json(product);
@@ -127,6 +128,78 @@ router.delete('/:id/permanent', protect, adminOnly, async (req, res) => {
         
         await Product.findByIdAndDelete(req.params.id);
         res.json({ message: 'Product permanently deleted (cannot be recovered)' });
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// SYNC ENDPOINT - Real-time updates for Android/Web polling
+// Returns products modified since a given timestamp
+// ═══════════════════════════════════════════════════════════════════
+router.get('/sync/updates', async (req, res) => {
+    try {
+        const { since, limit = 100 } = req.query;
+        const filter = { isActive: true, isDeleted: { $ne: true } };
+        
+        // If 'since' timestamp provided, only get products updated after that
+        if (since) {
+            filter.updatedAt = { $gt: new Date(since) };
+        }
+        
+        const products = await Product.find(filter)
+            .sort({ updatedAt: -1 })
+            .limit(Number(limit))
+            .select('-__v'); // Exclude version field
+        
+        res.json({
+            products,
+            count: products.length,
+            serverTime: new Date().toISOString()
+        });
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// ADMIN STATS - Quick product summary
+// ═══════════════════════════════════════════════════════════════════
+router.get('/admin/stats', protect, adminOnly, async (req, res) => {
+    try {
+        const [
+            totalProducts,
+            activeProducts,
+            outOfStock,
+            lowStock,
+            featuredCount,
+            newArrivals
+        ] = await Promise.all([
+            Product.countDocuments({ isDeleted: { $ne: true } }),
+            Product.countDocuments({ isActive: true, isDeleted: { $ne: true } }),
+            Product.countDocuments({ stock: 0, isDeleted: { $ne: true } }),
+            Product.countDocuments({ stock: { $gt: 0, $lte: 5 }, isDeleted: { $ne: true } }),
+            Product.countDocuments({ isFeatured: true, isActive: true, isDeleted: { $ne: true } }),
+            Product.countDocuments({ isNewArrival: true, isActive: true, isDeleted: { $ne: true } })
+        ]);
+        
+        // Category breakdown
+        const categoryStats = await Product.aggregate([
+            { $match: { isActive: true, isDeleted: { $ne: true } } },
+            { $group: { _id: '$category', count: { $sum: 1 } } },
+            { $sort: { count: -1 } }
+        ]);
+        
+        res.json({
+            totalProducts,
+            activeProducts,
+            outOfStock,
+            lowStock,
+            featuredCount,
+            newArrivals,
+            categoryStats,
+            serverTime: new Date().toISOString()
+        });
     } catch (err) {
         res.status(500).json({ message: err.message });
     }

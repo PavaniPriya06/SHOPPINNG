@@ -96,8 +96,9 @@ export const getMediaUrl = (path) => {
         return `${backendBase}${path}`;
     }
     
-    // Local development
-    return `http://localhost:5000${path}`;
+    // Local development - Backend runs on port 5000, Frontend on 3000
+    // Using relative path since Vite proxy handles it
+    return path;
 };
 
 export default api;

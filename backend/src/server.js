@@ -9,12 +9,18 @@ require('dotenv').config();
 // Import database config (production-grade)
 const { connectDB, disconnectDB, getDBHealth } = require('./config/database');
 
+// Import middleware
+const { globalErrorHandler, notFoundHandler } = require('./middleware/errorHandler');
+const { sanitizeInputs, rateLimit } = require('./middleware/validation');
+const logger = require('./utils/logger');
+
 // Import routes
 const authRoutes = require('./routes/auth');
 const productRoutes = require('./routes/products');
 const cartRoutes = require('./routes/cart');
 const orderRoutes = require('./routes/orders');
 const paymentRoutes = require('./routes/payment');
+const upiRoutes = require('./routes/upi');
 const settingsRoutes = require('./routes/settings');
 const adminExportRoutes = require('./routes/adminExport');
 
@@ -28,29 +34,29 @@ const PORT = process.env.PORT || 5000;
 // KEEP SERVER STABLE - Prevent crashes from unhandled errors
 // ═══════════════════════════════════════════════════════════════════
 process.on('uncaughtException', (err) => {
-    console.error('❌ Uncaught Exception (server continues):', err.message);
+    logger.error('❌ Uncaught Exception (server continues)', { error: err.message, stack: err.stack });
     // Don't exit - keep server running
 });
 
 process.on('unhandledRejection', (reason, promise) => {
-    console.error('❌ Unhandled Rejection (server continues):', reason);
+    logger.error('❌ Unhandled Rejection (server continues)', { reason: String(reason) });
     // Don't exit - keep server running
 });
 
 // Graceful shutdown with proper cleanup
 const gracefulShutdown = async (signal) => {
-    console.log(`\n📴 ${signal} received. Starting graceful shutdown...`);
+    logger.info(`📴 ${signal} received. Starting graceful shutdown...`);
     
     // Close server to stop accepting new connections
     if (global.server) {
-        console.log('   Closing HTTP server...');
+        logger.info('Closing HTTP server...');
         global.server.close();
     }
     
     // Close database connection
     await disconnectDB();
     
-    console.log('✅ Graceful shutdown complete');
+    logger.info('✅ Graceful shutdown complete');
     process.exit(0);
 };
 
@@ -90,8 +96,17 @@ app.use(cors({
 
 // Handle preflight requests explicitly for mobile browsers
 app.options('*', cors());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// Security & validation middleware
+app.use(sanitizeInputs);                          // Sanitize all inputs
+app.use(logger.requestLogger);                   // Log all requests
+
+// Rate limiting - prevent abuse
+app.use('/api/auth', rateLimit({ windowMs: 60000, max: 30, message: 'Too many auth requests' }));
+app.use('/api/payment', rateLimit({ windowMs: 60000, max: 20, message: 'Too many payment requests' }));
+
 app.use(session({
     secret: process.env.JWT_SECRET || 'tcs_session_secret',
     resave: false,
@@ -109,6 +124,7 @@ app.use('/api/products', productRoutes);
 app.use('/api/cart', cartRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/payment', paymentRoutes);
+app.use('/api/upi', upiRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/admin/export', adminExportRoutes);
 
@@ -142,7 +158,7 @@ const initializeDatabase = async () => {
     const connected = await connectDB();
     
     if (!connected) {
-        console.log('⚠️ Database not connected - some features will be unavailable');
+        logger.warn('Database not connected - some features will be unavailable');
         return;
     }
     
@@ -158,40 +174,53 @@ const initializeDatabase = async () => {
                 password: process.env.ADMIN_PASSWORD || 'Admin@123',
                 role: 'admin'
             });
-            console.log(`✅ Admin seeded: ${adminEmail}`);
+            logger.info(`Admin seeded: ${adminEmail}`);
         } else {
-            console.log(`✅ Admin exists: ${adminEmail}`);
+            logger.info(`Admin exists: ${adminEmail}`);
         }
     } catch (seedErr) {
-        console.log('⚠️ Could not seed admin:', seedErr.message);
+        logger.warn('Could not seed admin:', { error: seedErr.message });
     }
 };
 
 initializeDatabase();
 
-// Serve frontend static files in production
-if (process.env.NODE_ENV === 'production') {
-    const frontendPath = path.join(__dirname, '../../frontend/dist');
+// Serve frontend static files (both development and production)
+const frontendPath = path.join(__dirname, '../../frontend/dist');
+try {
     app.use(express.static(frontendPath));
     
     // Handle React routing - serve index.html for all non-API routes
-    app.get('*', (req, res) => {
+    app.get('*', (req, res, next) => {
         if (!req.path.startsWith('/api') && !req.path.startsWith('/uploads')) {
             res.sendFile(path.join(frontendPath, 'index.html'));
+        } else {
+            next();
         }
     });
+    logger.info('Frontend dist folder served from:', frontendPath);
+} catch (err) {
+    logger.warn('Frontend dist not found. Run "npm run build" in frontend folder first.');
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// ERROR HANDLING - Must be AFTER all routes
+// ═══════════════════════════════════════════════════════════════════
+app.use(notFoundHandler);     // Handle 404 for undefined API routes
+app.use(globalErrorHandler);  // Catch all errors and send proper response
 
 // ═══════════════════════════════════════════════════════════════════
 // START SERVER WITH ERROR HANDLING
 // ═══════════════════════════════════════════════════════════════════
-const server = app.listen(PORT, () => {
-    console.log('═══════════════════════════════════════════════════════════════════');
-    console.log(`🚀 TCS Server running on http://localhost:${PORT}`);
-    console.log(`📦 Environment: ${process.env.NODE_ENV || 'development'}`);
-    console.log(`♻️ Auto-reconnect enabled - server will stay connected`);
-    console.log(`💾 Data persistence: MongoDB Atlas (production-grade)`);
-    console.log('═══════════════════════════════════════════════════════════════════');
+const HOST = '0.0.0.0'; // Listen on all network interfaces for mobile access
+const server = app.listen(PORT, HOST, () => {
+    logger.info('═══════════════════════════════════════════════════════════════════');
+    logger.info(`🚀 TCS Server running on http://localhost:${PORT}`);
+    logger.info(`📱 Network: http://<your-ip>:${PORT} (for mobile testing)`);
+    logger.info(`📦 Environment: ${process.env.NODE_ENV || 'development'}`);
+    logger.info(`♻️ Auto-reconnect enabled - server will stay connected`);
+    logger.info(`💾 Data persistence: MongoDB Atlas (production-grade)`);
+    logger.info('═══════════════════════════════════════════════════════════════════');
 });
 
 // Store server reference for graceful shutdown
@@ -204,8 +233,8 @@ server.headersTimeout = 66000;   // Slightly more than keepAliveTimeout
 // Handle server errors without crashing
 server.on('error', (err) => {
     if (err.code === 'EADDRINUSE') {
-        console.error(`❌ Port ${PORT} already in use. Server running elsewhere?`);
+        logger.error(`Port ${PORT} already in use. Server running elsewhere?`);
     } else {
-        console.error('❌ Server error:', err.message);
+        logger.error('Server error', { error: err.message });
     }
 });

@@ -389,6 +389,21 @@ router.post('/cod', protect, async (req, res) => {
         
         await order.save();
         
+        // ✅ CREATE PAYMENT RECORD FOR TRACKING (status: Pending for COD)
+        await createPaymentRecord({
+            paymentId: `COD_${order._id}_${Date.now()}`,
+            orderId: order._id,
+            userId: req.user._id,
+            amount: order.totalAmount,
+            method: 'COD',
+            status: 'PENDING', // Will be marked PAID when delivered
+            contact: {
+                name: order.shippingAddress?.fullName || '',
+                phone: order.shippingAddress?.phone || ''
+            },
+            notes: { collectOnDelivery: true }
+        });
+        
         // Populate for response
         await order.populate('user', 'name email phone');
         

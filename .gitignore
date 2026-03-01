@@ -5,6 +5,7 @@ node_modules/
 # Environment files
 .env
 *.env.local
+.env.production
 
 # Build outputs
 dist/
@@ -21,13 +22,18 @@ Thumbs.db
 # Logs
 *.log
 npm-debug.log*
+server.log
 
 # Temp files
 tmp*/
 *.tmp
+tmpclaude*
 
-# Uploads (keep folder but ignore contents)
-uploads/products/*
-uploads/invoices/*
-!uploads/products/.gitkeep
-!uploads/invoices/.gitkeep
+# Uploads (exclude all uploaded content)
+backend/uploads/products/*
+backend/uploads/invoices/*
+!backend/uploads/products/.gitkeep
+!backend/uploads/invoices/.gitkeep
+
+# PDF files
+*.pdf

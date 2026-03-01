@@ -3,8 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { FiHeart, FiShoppingBag, FiStar, FiZap } from 'react-icons/fi';
 import { useCart } from '../context/CartContext';
-
-const API_URL = 'http://localhost:5000';
+import { getMediaUrl } from '../utils/api';
 
 const gradeClass = {
     Premium: 'badge-premium',
@@ -20,7 +19,7 @@ export default function ProductCard({ product, index = 0 }) {
     const [adding, setAdding] = useState(false);
 
     const img = product.images?.[imgIdx]
-        ? `${API_URL}${product.images[imgIdx]}`
+        ? getMediaUrl(product.images[imgIdx])
         : `https://placehold.co/400x500/F5F0E8/2C1810?text=${encodeURIComponent(product.name || 'TCS')}`;
 
     const discount = product.originalPrice

@@ -3,12 +3,12 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { FiShoppingBag, FiHeart, FiChevronLeft, FiChevronRight, FiZap } from 'react-icons/fi';
 import api from '../utils/api';
+import { getMediaUrl } from '../utils/api';
 import { useCart } from '../context/CartContext';
 import { useAuth } from '../context/AuthContext';
 import AddressModal from '../components/AddressModal';
 import PaymentModal from '../components/PaymentModal';
 
-const API_URL = 'http://localhost:5000';
 const gradeClass = { Premium: 'badge-premium', Standard: 'badge-standard', Economy: 'badge-economy' };
 
 export default function ProductPage() {
@@ -55,7 +55,7 @@ export default function ProductPage() {
     if (!product) return null;
 
     const images = product.images?.length > 0
-        ? product.images.map(img => `${API_URL}${img}`)
+        ? product.images.map(img => getMediaUrl(img))
         : [`https://placehold.co/600x800/F5F0E8/2C1810?text=${encodeURIComponent(product.name)}`];
 
     const handleAddToCart = () => {

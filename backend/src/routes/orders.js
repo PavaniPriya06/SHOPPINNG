@@ -36,7 +36,19 @@ router.post('/', protect, async (req, res) => {
             }
         }
 
-        const shippingCharge = totalAmount > 999 ? 0 : 49;
+        // ═════════════════════════════════════════════════════════════════════
+        // FETCH DELIVERY CHARGES FROM SETTINGS IN REAL-TIME ✅
+        // ═════════════════════════════════════════════════════════════════════
+        let deliveryCharges = 0;
+        try {
+            const deliverySetting = await Settings.findOne({ key: 'deliveryCharges' });
+            deliveryCharges = deliverySetting?.value || 0;
+            console.log(`📦 Delivery Charges Applied: ₹${deliveryCharges}`);
+        } catch (err) {
+            console.log('Could not fetch delivery charges, using default 0');
+            deliveryCharges = 0;
+        }
+        const shippingCharge = deliveryCharges;
         totalAmount += shippingCharge;
 
         // Normalise address — frontend may send fullName/houseNo or legacy name/street
@@ -324,6 +336,98 @@ router.put('/:id/restore', protect, adminOnly, async (req, res) => {
         const order = await restoreDeleted('Order', req.params.id);
         await order.populate('user', 'name email phone');
         res.json({ message: 'Order restored successfully', order });
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// SYNC ENDPOINT - Real-time updates for Android/Web polling
+// Returns only orders updated since a given timestamp
+// ═══════════════════════════════════════════════════════════════════
+router.get('/sync/updates', protect, async (req, res) => {
+    try {
+        const { since, limit = 50 } = req.query;
+        const filter = { isDeleted: { $ne: true } };
+        
+        // If user is not admin, only show their orders
+        if (req.user.role !== 'admin') {
+            filter.user = req.user._id;
+        }
+        
+        // If 'since' timestamp provided, only get orders updated after that
+        if (since) {
+            filter.updatedAt = { $gt: new Date(since) };
+        }
+        
+        const orders = await Order.find(filter)
+            .populate('user', 'name email phone')
+            .populate('items.product', 'name images price')
+            .sort({ updatedAt: -1 })
+            .limit(Number(limit));
+        
+        res.json({
+            orders,
+            count: orders.length,
+            serverTime: new Date().toISOString()
+        });
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// ADMIN DASHBOARD STATS - Quick summary for admin
+// ═══════════════════════════════════════════════════════════════════
+router.get('/admin/stats/summary', protect, adminOnly, async (req, res) => {
+    try {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        
+        const [
+            totalOrders,
+            todayOrders,
+            pendingOrders,
+            paidOrders,
+            shippedOrders,
+            deliveredOrders,
+            cancelledOrders
+        ] = await Promise.all([
+            Order.countDocuments({ isDeleted: { $ne: true } }),
+            Order.countDocuments({ createdAt: { $gte: today }, isDeleted: { $ne: true } }),
+            Order.countDocuments({ status: 'PENDING', isDeleted: { $ne: true } }),
+            Order.countDocuments({ paymentStatus: 'Paid', isDeleted: { $ne: true } }),
+            Order.countDocuments({ status: 'SHIPPED', isDeleted: { $ne: true } }),
+            Order.countDocuments({ status: 'DELIVERED', isDeleted: { $ne: true } }),
+            Order.countDocuments({ status: 'CANCELLED', isDeleted: { $ne: true } })
+        ]);
+        
+        // Calculate revenue
+        const revenueResult = await Order.aggregate([
+            { $match: { paymentStatus: 'Paid', isDeleted: { $ne: true } } },
+            { $group: { _id: null, total: { $sum: '$totalAmount' } } }
+        ]);
+        const totalRevenue = revenueResult[0]?.total || 0;
+        
+        // Today's revenue
+        const todayRevenueResult = await Order.aggregate([
+            { $match: { paymentStatus: 'Paid', createdAt: { $gte: today }, isDeleted: { $ne: true } } },
+            { $group: { _id: null, total: { $sum: '$totalAmount' } } }
+        ]);
+        const todayRevenue = todayRevenueResult[0]?.total || 0;
+        
+        res.json({
+            totalOrders,
+            todayOrders,
+            pendingOrders,
+            paidOrders,
+            shippedOrders,
+            deliveredOrders,
+            cancelledOrders,
+            totalRevenue,
+            todayRevenue,
+            serverTime: new Date().toISOString()
+        });
     } catch (err) {
         res.status(500).json({ message: err.message });
     }

@@ -1,20 +1,26 @@
 services:
   - type: web
     name: tcs-clothing-backend
-    env: node
+    runtime: node
     rootDir: backend
     buildCommand: npm install
     startCommand: npm start
+    plan: free
+    healthCheckPath: /api/health
     envVars:
       - key: NODE_ENV
         value: production
       - key: MONGODB_URI
-        value: mongodb+srv://phani200656_db_user:c97Vy27n24eCak4w@cluster3.yidfxrd.mongodb.net/tcs-store?retryWrites=true&w=majority
+        sync: false  # Set manually in Render dashboard
       - key: JWT_SECRET
-        value: tcs_super_secret_jwt_key_2026
+        sync: false  # Set manually in Render dashboard
       - key: ADMIN_EMAIL
         value: admin@tcs.com
       - key: ADMIN_PASSWORD
-        value: Admin@123
+        sync: false  # Set manually in Render dashboard
       - key: CLIENT_URL
-        value: https://cloth-sh.vercel.app
+        sync: false  # Set to your Vercel frontend URL
+      - key: MERCHANT_UPI_ID
+        value: 9391800473@axl
+      - key: MERCHANT_NAME
+        value: TCS Store

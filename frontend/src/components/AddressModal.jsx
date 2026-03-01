@@ -58,6 +58,61 @@ export default function AddressModal({ isOpen, onClose, onSubmit, initialData = 
         requestBrowserLocation();
     }, [isOpen]);
 
+        // Reverse geocode when lat/lng is set
+        useEffect(() => {
+            if (form.lat && form.lng) {
+                fetchReverseGeocode(form.lat, form.lng);
+            }
+        }, [form.lat, form.lng]);
+
+            // Autofill city/state when pincode changes
+            useEffect(() => {
+                const fetchPincodeDetails = async (pincode) => {
+                    try {
+                        const response = await fetch(`https://api.postalpincode.in/pincode/${pincode}`);
+                        const data = await response.json();
+                        if (data[0].Status === 'Success' && data[0].PostOffice && data[0].PostOffice.length > 0) {
+                            const po = data[0].PostOffice[0];
+                            setForm(f => ({
+                                ...f,
+                                city: f.city || po.District || '',
+                                state: f.state || po.State || ''
+                            }));
+                        }
+                    } catch (err) {
+                        console.log('Pincode lookup failed:', err.message);
+                    }
+                };
+                if (/^\d{6}$/.test(form.pincode)) {
+                    fetchPincodeDetails(form.pincode);
+                }
+            }, [form.pincode]);
+
+        const fetchReverseGeocode = async (lat, lng) => {
+            try {
+                // Using OpenStreetMap Nominatim API (no key required, but rate limited)
+                const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`;
+                const response = await fetch(url);
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.address) {
+                        setForm(f => ({
+                            ...f,
+                            houseNo: f.houseNo || data.address.house_number || '',
+                            street: f.street || data.address.road || data.address.neighbourhood || '',
+                            city: f.city || data.address.city || data.address.town || data.address.village || '',
+                            state: f.state || data.address.state || '',
+                            pincode: f.pincode || data.address.postcode || '',
+                            landmark: f.landmark || data.address.suburb || '',
+                            locationSource: 'GPS+ReverseGeocode'
+                        }));
+                    }
+                }
+            } catch (err) {
+                console.log('Reverse geocode failed:', err.message);
+            }
+        };
+
     const fetchIPLocation = async () => {
         try {
             // Using free IP geolocation API

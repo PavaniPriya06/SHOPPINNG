@@ -19,7 +19,12 @@ const getApiUrl = () => {
         // Backend on Render - update this URL after backend deployment
         return import.meta.env.VITE_BACKEND_URL || 'https://tcs-backend.onrender.com/api';
     }
-    
+
+    // Netlify deployment
+    if (hostname.includes('netlify.app')) {
+        return import.meta.env.VITE_BACKEND_URL || 'https://tcs-backend.onrender.com/api';
+    }
+
     // Render deployment
     if (hostname.includes('onrender.com')) {
         return '/api'; // Same origin
@@ -91,8 +96,8 @@ export const getMediaUrl = (path) => {
     // For production, construct full URL to backend
     const hostname = window.location.hostname;
     if (hostname !== 'localhost' && !hostname.includes('127.0.0.1')) {
-        const backendBase = import.meta.env.VITE_BACKEND_URL || 
-                           (hostname.includes('vercel.app') ? 'https://tcs-backend.onrender.com' : '');
+        const backendBase = import.meta.env.VITE_BACKEND_URL ||
+                           ((hostname.includes('vercel.app') || hostname.includes('netlify.app')) ? 'https://tcs-backend.onrender.com' : '');
         return `${backendBase}${path}`;
     }
     
